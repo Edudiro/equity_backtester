@@ -1,0 +1,4 @@
+pandas>=3.0
+numpy>=2.5
+yfinance>=1.7
+pytest>=9.1

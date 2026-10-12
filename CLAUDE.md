@@ -71,8 +71,9 @@ Data flows one way: `StrategySpec` → `data` → `processing` → `signals` →
 
 ## Current status
 
-- Git repo initialised (no commits yet). `.venv` created with Python 3.13.5.
-- **Next:** finish Phase 0. Install `pandas numpy yfinance pytest`, write `spec.py`, `data.py` with caching, `requirements.txt`, `.gitignore`, and first tests.
+- **Phase 0 done:** `spec.py` (immutable `StrategySpec`, validation, JSON round-trip), `data.py` (`DataProvider` interface, `YFinanceProvider`, `CachedProvider` CSV cache), and offline tests using a fake provider.
+- Data note: Yahoo's `close` is already split-adjusted but not dividend-adjusted. `adj_close` is adjusted for both, so returns use `adj_close`.
+- **Next:** Phase 1. `processing.py` (returns, SMA), `signals.py` (SMA crossover giving long/flat targets), vectorized `engine.py`, basic `metrics.py`, and hand-computed tests.
 
 ## Commands
 
