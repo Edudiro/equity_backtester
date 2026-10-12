@@ -14,9 +14,8 @@ Stooq or a CSV folder tomorrow, a fake provider in tests.
 
 Caching is a separate wrapper (`CachedProvider`) rather than being baked into
 the yfinance code. This is the decorator pattern: it wraps *any* provider, so
-switching source doesn't mean rewriting the cache. Caching also matters for
-reproducibility: Yahoo sometimes revises its history, and a cached file
-pins the exact data a backtest ran on.
+switching source doesn't mean rewriting the cache. It also keeps the app
+fast and avoids hammering Yahoo, which rate-limits heavy users.
 
 The standard schema
 -------------------
@@ -49,7 +48,9 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from datetime import date, timedelta
 from pathlib import Path
+from typing import Callable
 
+import numpy as np
 import pandas as pd
 
 COLUMNS = ["open", "high", "low", "close", "adj_close", "volume"]
@@ -104,29 +105,89 @@ class YFinanceProvider(DataProvider):
 
 
 class CachedProvider(DataProvider):
-    """Wraps another provider and stores each request as a CSV on disk.
+    """Wraps another provider and keeps one CSV per ticker with its full history.
 
-    The cache key is (ticker, start, end). That's simple and always correct
-    (the file holds exactly what was asked for), at the cost of re-downloading
-    when the date range changes. Fine for daily data on a few tickers.
+    How a request is served
+    -----------------------
+    1. No file yet: download the ticker's entire history once and save it.
+    2. File exists and is up to date: just read it and slice [start, end].
+    3. File exists but `end` is after the last cached day: fetch only the
+       recent days and append them.
+
+    The cache is checked against the source at most once per day (using the
+    file's modification date), so a weekend or holiday request doesn't
+    trigger a pointless download every time.
+
+    The adjustment trap when appending
+    ----------------------------------
+    adj_close is adjusted *backwards*. When a stock goes ex-dividend or
+    splits, Yahoo rescales its whole adj_close history. Appending new rows
+    (on the new scale) to old cached rows (on the old scale) would put a fake
+    jump in the series on the day where they meet.
+
+    To catch this, every update re-downloads a short window that overlaps the
+    cache and compares adj_close on the overlapping days. If they disagree,
+    history was rescaled, and the whole file is downloaded again. The last
+    cached day is left out of the comparison: it may have been saved during
+    the trading session as an unfinished bar, which is simply overwritten.
     """
 
-    def __init__(self, inner: DataProvider, cache_dir: str | Path = "data_cache"):
+    FULL_HISTORY_START = date(1900, 1, 1)  # earlier than any listing: "give me everything"
+    OVERLAP_DAYS = 10  # calendar days re-downloaded to check for rescaling
+
+    def __init__(
+        self,
+        inner: DataProvider,
+        cache_dir: str | Path = "data_cache",
+        today: Callable[[], date] = date.today,  # injectable so tests can fake time passing
+    ):
         self.inner = inner
         self.cache_dir = Path(cache_dir)
+        self.today = today
 
-    def _path(self, ticker: str, start: date, end: date) -> Path:
-        return self.cache_dir / f"{ticker}_{start.isoformat()}_{end.isoformat()}.csv"
+    def _path(self, ticker: str) -> Path:
+        return self.cache_dir / f"{ticker}.csv"
 
     def get_prices(self, ticker: str, start: date, end: date) -> pd.DataFrame:
-        path = self._path(ticker, start, end)
+        path = self._path(ticker)
         if path.exists():
-            return standardise(pd.read_csv(path, index_col="date", parse_dates=True))
+            df = standardise(pd.read_csv(path, index_col="date", parse_dates=True))
+            if end > df.index[-1].date() and not self._checked_today(path):
+                df = self._update(ticker, df)
+                self._save(df, path)
+        else:
+            df = self._download_all(ticker)
+            self._save(df, path)
 
-        df = self.inner.get_prices(ticker, start, end)
+        # Slicing a DatetimeIndex with strings is inclusive on both ends.
+        return df.loc[start.isoformat() : end.isoformat()]
+
+    def _download_all(self, ticker: str) -> pd.DataFrame:
+        return self.inner.get_prices(ticker, self.FULL_HISTORY_START, self.today())
+
+    def _update(self, ticker: str, cached: pd.DataFrame) -> pd.DataFrame:
+        last = cached.index[-1]
+        fresh = self.inner.get_prices(
+            ticker, (last - pd.Timedelta(days=self.OVERLAP_DAYS)).date(), self.today()
+        )
+
+        # Days present in both, excluding the last cached day (possibly an unfinished bar).
+        overlap = cached.index[:-1].intersection(fresh.index)
+        consistent = np.allclose(
+            cached.loc[overlap, "adj_close"], fresh.loc[overlap, "adj_close"], rtol=1e-6
+        )
+        if not consistent:
+            return self._download_all(ticker)
+
+        # Fresh rows win on overlapping days (standardise keeps the last duplicate).
+        return standardise(pd.concat([cached, fresh]))
+
+    def _checked_today(self, path: Path) -> bool:
+        return date.fromtimestamp(path.stat().st_mtime) >= self.today()
+
+    def _save(self, df: pd.DataFrame, path: Path) -> None:
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         df.to_csv(path)
-        return df
 
 
 def default_provider(cache_dir: str | Path = "data_cache") -> DataProvider:
