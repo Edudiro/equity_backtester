@@ -28,8 +28,10 @@ equity_backtester/
 │   ├── rules.py         # operands/conditions as data (compare, crosses, all/any) -> True/False frames
 │   ├── strategies.py    # strategy builders, registered by type -> TARGET WEIGHTS
 │   ├── engine.py        # target weights -> held weights, costs, returns, equity
-│   ├── metrics.py       # KPIs: CAGR, vol, Sharpe, drawdown, exposure, trades
-│   └── backtest.py      # run_backtest(spec): wires everything together
+│   ├── metrics.py       # KPIs: CAGR, vol, Sharpe, drawdown episodes, exposure; beta/alpha/IR vs benchmark
+│   ├── trades.py        # held weights -> round-trip trade list + trade stats (win rate, profit factor, ...)
+│   ├── constants.py     # shared conventions (TRADING_DAYS = 252)
+│   └── backtest.py      # run_backtest(spec) -> Backtest (strategy, benchmark, metrics, trades, drawdowns)
 ├── app.py               # Streamlit frontend (thin): builds a StrategySpec, plots results (Phase 3)
 ├── tests/               # hand-computed toy series with known answers; tests/fakes.py has no-network fakes
 └── requirements.txt
@@ -43,6 +45,7 @@ Data flows one way: `StrategySpec` → `data` → `indicators`/`rules` → strat
 - **Every strategy reduces to a target-weights table** (dates × tickers, fraction of capital). The engine only understands weights, so new strategy families never touch the engine, costs or metrics.
 - **Indicators are our own implementations** in pandas/numpy (no TA-Lib), registered with `@indicator`, and work on wide frames, so one implementation serves one stock or 500. We only skip one if it needs data we can't get for free (e.g. fundamentals).
 - Indicators are computed on full history (warm-up), but each backtest's state machine starts flat at `spec.start`.
+- The benchmark (buy-and-hold of the strategy's tickers, or `spec.benchmark` such as "SPY") runs through the **same engine, costs and execution** as the strategy, so the comparison is fair.
 
 Strategy families the design must support (the user's examples):
 - Time-series / rule-based: "long when SMA50 crosses above SMA200, flat when it crosses below".
@@ -85,7 +88,14 @@ Strategy families the design must support (the user's examples):
 - **Phase 1 done:** indicators (`price`, `sma`, `ema`, `momentum`, `volatility`, `rsi`), rules, the `rule_based` strategy, the weights engine (`next_open`/`close`), metrics, and `run_backtest`. There are 80 offline tests.
 - Sanity check on SPY 2005–2024, with 3 bps total costs: buy-and-hold CAGR 10.3%, max drawdown −55%. Golden cross CAGR 8.4%, max drawdown −34%, Sharpe 0.68 vs 0.61.
 - Data note: Yahoo's `close` is already split-adjusted but not dividend-adjusted. `adj_close` is adjusted for both. The engine derives the adjusted open as `open × adj_close / close`.
-- **Next:** Phase 2. A trade list (entry/exit dates, per-trade return), a buy-and-hold benchmark, the drawdown series in results, and possibly a cash rate for Sharpe.
+- **Phase 2 done (no cash rate, by the user's choice):**
+  - A trade list. For a single stock, compounding the trades reproduces the equity curve exactly, and a test checks this.
+  - Trade stats: win rate, payoff ratio, profit factor, expectancy, streaks.
+  - Drawdown episodes: peak, trough and recovery dates, depth, duration.
+  - A buy-and-hold benchmark, plus beta, alpha, correlation, tracking error and information ratio.
+  - There are 94 tests.
+- Golden cross on SPY 2005–2024: beta 0.48, alpha +3.4%/yr, but information ratio −0.19 (positive alpha, yet it trails buy-and-hold because it holds half the market exposure). 8 closed trades with a 75% win rate and a profit factor of 9.7. Its longest drawdown lasted 479 days, against 1,224 for buy-and-hold.
+- **Next:** Phase 3, the Streamlit app and deployment for phone use. Deployment needs a GitHub remote, so ask the user before creating or pushing one.
 
 ## Commands
 

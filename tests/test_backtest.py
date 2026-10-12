@@ -53,7 +53,7 @@ def test_end_to_end_return_matches_hand_calculation(provider):
     expected = h.loc["2024-06-28"] / h.loc["2024-06-04"] - 1
     assert bt.metrics["total_return"] == pytest.approx(expected)
     assert bt.result.equity.iloc[-1] == pytest.approx(1000 * (1 + expected))
-    assert bt.metrics["n_trades"] == 1
+    assert len(bt.trades) == 1 and bt.trades["is_open"].iloc[0]  # bought once, never sold
 
 
 def test_costs_reduce_return(provider):
@@ -65,3 +65,18 @@ def test_costs_reduce_return(provider):
 def test_no_trading_days_in_range_raises(provider):
     with pytest.raises(ValueError, match="no trading days"):
         run_backtest(spec(start="2024-06-08", end="2024-06-09"), provider)  # a weekend
+
+
+def test_benchmark_is_buy_and_hold_through_the_same_engine(provider):
+    bt = run_backtest(spec(fee_bps=10), provider)
+    # Our strategy is long the whole time, so it IS buy-and-hold: identical results.
+    pd.testing.assert_series_equal(bt.result.equity, bt.benchmark.equity)
+    assert bt.relative["beta"] == pytest.approx(1)
+
+
+def test_benchmark_can_be_another_ticker():
+    hist = make_history("2023-01-02", "2024-12-31")
+    provider = FakeProvider({"X": hist, "SPY": hist * 2})
+    bt = run_backtest(spec(benchmark="spy"), provider)
+    assert list(bt.benchmark.held_weights.columns) == ["SPY"]
+    assert list(bt.result.held_weights.columns) == ["X"]  # the strategy never trades SPY

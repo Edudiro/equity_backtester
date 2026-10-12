@@ -47,7 +47,7 @@ from typing import Callable
 import numpy as np
 import pandas as pd
 
-TRADING_DAYS = 252
+from backtester.constants import TRADING_DAYS
 
 
 @dataclass(frozen=True)

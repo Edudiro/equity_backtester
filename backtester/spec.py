@@ -55,12 +55,17 @@ class StrategySpec:
     fee_bps: float = 0.0  # broker commission per unit traded, in bps
     slippage_bps: float = 0.0  # execution worse than the quoted price, in bps
     execution: str = "next_open"  # when a decision taken at the close is traded; see engine.py
+    # Buy-and-hold comparison, run through the same engine, costs and execution.
+    # None -> equal-weight buy-and-hold of the strategy's own tickers; or a ticker such as "SPY".
+    benchmark: str | None = None
 
     def __post_init__(self) -> None:
         # Normalise tickers so "aapl" and "AAPL " hit the same cache file.
         # (object.__setattr__ is the standard way to set a field on a frozen dataclass.)
         tickers = tuple(t.strip().upper() for t in self.tickers)
         object.__setattr__(self, "tickers", tickers)
+        if self.benchmark is not None:
+            object.__setattr__(self, "benchmark", self.benchmark.strip().upper() or None)
 
         if not tickers or not all(tickers):
             raise ValueError("tickers must be a non-empty list of non-empty symbols")
@@ -94,6 +99,7 @@ class StrategySpec:
             "fee_bps": self.fee_bps,
             "slippage_bps": self.slippage_bps,
             "execution": self.execution,
+            "benchmark": self.benchmark,
         }
 
     @classmethod

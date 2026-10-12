@@ -68,6 +68,8 @@ class BacktestResult:
     returns: pd.Series  # net daily portfolio return
     equity: pd.Series
     initial_capital: float
+    execution: str
+    cost: float  # per unit of turnover, as a fraction
 
 
 def adjusted_open(prices: dict[str, pd.DataFrame]) -> pd.DataFrame:
@@ -130,6 +132,8 @@ def run(
         returns=growth - 1,
         equity=equity,
         initial_capital=initial_capital,
+        execution=execution,
+        cost=cost,
     )
 
 
