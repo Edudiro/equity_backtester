@@ -1,0 +1,7 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.DS_Store
+# downloaded price cache (re-creatable from the data source)
+data_cache/
