@@ -24,6 +24,8 @@ Entry and exit prices follow the engine's execution setting:
 
 A trade still open on the last day is marked at the last close, with only
 the entry cost paid (nothing has been sold yet), and flagged `is_open`.
+`exit_reason` is "signal" (the strategy exited), "end" (still open), or, with
+the event engine, "stop_loss" / "take_profit" / "trailing_stop".
 For a single stock traded at 0 or 100%, compounding all trades' net returns
 reproduces the engine's equity exactly; tests/test_trades.py checks this.
 
@@ -46,19 +48,21 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from backtester.engine import BacktestResult, adjusted_open
+from backtester.engine import BacktestResult, adjusted
 from backtester.metrics import as_python
 
 COLUMNS = [
     "ticker", "entry_date", "exit_date", "entry_price", "exit_price",
-    "days_held", "gross_return", "net_return", "is_open",
+    "days_held", "gross_return", "net_return", "is_open", "exit_reason",
 ]  # fmt: skip
 
 
 def extract_trades(result: BacktestResult, prices: dict[str, pd.DataFrame]) -> pd.DataFrame:
+    if result.trade_log is not None:  # the engine recorded its trades exactly
+        return result.trade_log
     held = result.held_weights
     dates = held.index
-    fill = adjusted_open(prices) if result.execution == "next_open" else prices["adj_close"]
+    fill = adjusted(prices, "open") if result.execution == "next_open" else prices["adj_close"]
     last_close = prices["adj_close"].reindex(dates).iloc[-1]
     c = result.cost
 
@@ -88,6 +92,7 @@ def extract_trades(result: BacktestResult, prices: dict[str, pd.DataFrame]) -> p
                     "gross_return": ratio - 1,
                     "net_return": ratio * (1 - c) ** (1 if is_open else 2) - 1,
                     "is_open": is_open,
+                    "exit_reason": "end" if is_open else "signal",
                 }
             )
 

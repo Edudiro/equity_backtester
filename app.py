@@ -151,6 +151,7 @@ def drawdown_chart(bt: Backtest) -> go.Figure:
 
 def show_results(bt: Backtest) -> None:
     m, b = bt.metrics, bt.benchmark_metrics
+    st.caption(f"Engine: {'event-driven (day by day)' if bt.spec.uses_event_engine else 'vectorized'}")
 
     c1, c2, c3 = st.columns(3)
     c1.metric("CAGR", pct(m["cagr"]), f"{(m['cagr'] - b['cagr']) * 100:+.1f} pp vs bench")
@@ -197,7 +198,7 @@ def show_results(bt: Backtest) -> None:
         entry_date=bt.trades["entry_date"].dt.date,
         exit_date=bt.trades["exit_date"].dt.date,
         net_return=bt.trades["net_return"].map(pct),
-    )[["ticker", "entry_date", "exit_date", "entry_price", "exit_price", "days_held", "net_return", "is_open"]]
+    )[["ticker", "entry_date", "exit_date", "entry_price", "exit_price", "days_held", "net_return", "exit_reason"]]
     st.dataframe(trades, width="stretch", hide_index=True,
                  column_config={"entry_price": st.column_config.NumberColumn(format="%.2f"),
                                 "exit_price": st.column_config.NumberColumn(format="%.2f")})  # fmt: skip
@@ -243,6 +244,14 @@ with st.expander("Entry rule (go long when...)", expanded=True):
 with st.expander("Exit rule (go flat when...)", expanded=True):
     exit_ = condition_input(f"{preset}.exit", p["exit"])
 
+with st.expander("Risk: stops (0 = off)"):
+    st.caption("Per position, as % of the entry price. Stops switch to the day-by-day engine. "
+               "A gap through a stop fills at the open; if a day touches both stop and target, the stop counts.")  # fmt: skip
+    c1, c2, c3 = st.columns(3)
+    sl = c1.number_input("Stop-loss %", 0.0, 99.0, 0.0, 1.0)
+    tp = c2.number_input("Take-profit %", 0.0, 1000.0, 0.0, 1.0)
+    ts = c3.number_input("Trailing stop %", 0.0, 99.0, 0.0, 1.0)
+
 spec_dict = {
     "tickers": [t for t in tickers.split(",") if t.strip()],
     "start": start.isoformat(),
@@ -252,6 +261,7 @@ spec_dict = {
     "execution": execution,
     "benchmark": benchmark or None,
     "strategy": {"type": "rule_based", "entry": entry, "exit": exit_},
+    "risk": {"stop_loss": sl / 100 or None, "take_profit": tp / 100 or None, "trailing_stop": ts / 100 or None},
 }
 
 with st.expander("Advanced: spec as JSON"):

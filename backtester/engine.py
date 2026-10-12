@@ -70,16 +70,19 @@ class BacktestResult:
     initial_capital: float
     execution: str
     cost: float  # per unit of turnover, as a fraction
+    # Trades recorded by an engine that knows them exactly (the event engine,
+    # e.g. stop fills). None -> trades.py reconstructs them from held_weights.
+    trade_log: pd.DataFrame | None = None
 
 
-def adjusted_open(prices: dict[str, pd.DataFrame]) -> pd.DataFrame:
-    """Open price on the same adjusted scale as adj_close.
+def adjusted(prices: dict[str, pd.DataFrame], field: str) -> pd.DataFrame:
+    """open/high/low on the same adjusted scale as adj_close.
 
     adj_close / close is the dividend adjustment factor for each day (see
     data.py: Yahoo's close is already split-adjusted). Applying the same factor
-    to the open puts it on the adj_close scale.
+    to the open, high or low puts them on the adj_close scale.
     """
-    return prices["open"] * prices["adj_close"] / prices["close"]
+    return prices[field] * prices["adj_close"] / prices["close"]
 
 
 def run(
@@ -112,7 +115,7 @@ def run(
         _check_no_missing_returns(r, held_before)
         growth = (1 + (held_before * r.fillna(0)).sum(axis=1)) * trade_factor
     else:
-        open_ = adjusted_open(prices)[tickers].reindex(dates)
+        open_ = adjusted(prices, "open")[tickers].reindex(dates)
         r_overnight = open_ / prev_close - 1
         r_intraday = close / open_ - 1
         _check_no_missing_returns(r_overnight, held_before)

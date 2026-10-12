@@ -42,7 +42,11 @@ from dataclasses import dataclass
 from datetime import date
 
 from backtester.engine import EXECUTIONS
+from backtester.risk import RiskRules
 from backtester.strategies import Strategy, parse_strategy
+
+
+ENGINES = ("auto", "vectorized", "event")
 
 
 @dataclass(frozen=True)
@@ -58,6 +62,11 @@ class StrategySpec:
     # Buy-and-hold comparison, run through the same engine, costs and execution.
     # None -> equal-weight buy-and-hold of the strategy's own tickers; or a ticker such as "SPY".
     benchmark: str | None = None
+    # Stop-loss / take-profit / trailing stop, applied per position. See risk.py.
+    risk: RiskRules = RiskRules()
+    # "auto": the event-driven engine when risk rules are on, else the vectorized one.
+    # "event" / "vectorized" force one (useful to compare them).
+    engine: str = "auto"
 
     def __post_init__(self) -> None:
         # Normalise tickers so "aapl" and "AAPL " hit the same cache file.
@@ -81,6 +90,14 @@ class StrategySpec:
             raise ValueError("costs must be non-negative")
         if self.execution not in EXECUTIONS:
             raise ValueError(f"execution must be one of {EXECUTIONS}, got {self.execution!r}")
+        if self.engine not in ENGINES:
+            raise ValueError(f"engine must be one of {ENGINES}, got {self.engine!r}")
+        if self.engine == "vectorized" and self.risk.active:
+            raise ValueError("stops are path-dependent: they need the event engine, not 'vectorized'")
+
+    @property
+    def uses_event_engine(self) -> bool:
+        return self.engine == "event" or (self.engine == "auto" and self.risk.active)
 
     @property
     def cost_per_unit_turnover(self) -> float:
@@ -100,6 +117,8 @@ class StrategySpec:
             "slippage_bps": self.slippage_bps,
             "execution": self.execution,
             "benchmark": self.benchmark,
+            "risk": self.risk.to_dict(),
+            "engine": self.engine,
         }
 
     @classmethod
@@ -109,4 +128,5 @@ class StrategySpec:
         d["start"] = date.fromisoformat(d["start"])
         d["end"] = date.fromisoformat(d["end"])
         d["strategy"] = parse_strategy(d["strategy"])
+        d["risk"] = RiskRules.from_dict(d.get("risk"))
         return cls(**d)

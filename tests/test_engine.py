@@ -66,7 +66,7 @@ def test_buy_and_hold_at_close_earns_price_ratio():
 def test_adjusted_open_uses_dividend_factor():
     # adj_close = close * 0.5 -> adjusted open must be on the same scale.
     m = market(CLOSE, OPEN, adj_factor=0.5)
-    assert engine.adjusted_open(m)["X"].tolist() == [50, 52.5, 50, 49.5]
+    assert engine.adjusted(m, "open")["X"].tolist() == [50, 52.5, 50, 49.5]
 
 
 def test_missing_price_while_invested_raises():

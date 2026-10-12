@@ -11,6 +11,12 @@ cache holds full history anyway), not from `spec.start`. Indicators are
 computed on all of it, so an SMA(200) already has a value on the first day
 of the backtest. Only then is everything cut to [start, end].
 
+Which engine
+------------
+Without risk rules the vectorized engine runs (fast, every formula visible).
+Stops are path-dependent, so with risk rules the event-driven engine runs.
+`spec.engine` can force either one, e.g. to compare them.
+
 A fair benchmark
 ----------------
 The benchmark is buy-and-hold run through the SAME engine with the same
@@ -25,7 +31,7 @@ from dataclasses import dataclass
 
 import pandas as pd
 
-from backtester import engine, metrics
+from backtester import engine, event_engine, metrics
 from backtester.data import COLUMNS, FULL_HISTORY_START, DataProvider, default_provider
 from backtester.rules import Context
 from backtester.spec import StrategySpec
@@ -60,22 +66,18 @@ def run_backtest(spec: StrategySpec, provider: DataProvider | None = None) -> Ba
     if dates.empty:
         raise ValueError(f"no trading days between {spec.start} and {spec.end}")
 
-    def simulate(weights: pd.DataFrame, px: dict[str, pd.DataFrame]) -> engine.BacktestResult:
-        return engine.run(
-            weights,
-            px,
-            cost=spec.cost_per_unit_turnover,
-            execution=spec.execution,
-            initial_capital=spec.initial_capital,
-        )
+    settings = dict(cost=spec.cost_per_unit_turnover, execution=spec.execution, initial_capital=spec.initial_capital)
 
     weights = spec.strategy.target_weights(Context(prices), dates[0]).loc[dates]
-    result = simulate(weights, prices)
+    if spec.uses_event_engine:
+        result = event_engine.run(weights, prices, risk=spec.risk, **settings)
+    else:
+        result = engine.run(weights, prices, **settings)
 
     bench_tickers = [spec.benchmark] if spec.benchmark else list(spec.tickers)
     bench_prices = load_prices(provider, bench_tickers, spec.end) if spec.benchmark else prices
     bench_weights = pd.DataFrame(1 / len(bench_tickers), index=dates, columns=bench_tickers)
-    benchmark = simulate(bench_weights, bench_prices)
+    benchmark = engine.run(bench_weights, bench_prices, **settings)  # plain buy-and-hold, no stops
 
     trades = extract_trades(result, prices)
     return Backtest(

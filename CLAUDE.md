@@ -27,7 +27,9 @@ equity_backtester/
 │   ├── indicators.py    # our own indicator implementations, registered by name
 │   ├── rules.py         # operands/conditions as data (compare, crosses, all/any) -> True/False frames
 │   ├── strategies.py    # strategy builders, registered by type -> TARGET WEIGHTS
-│   ├── engine.py        # target weights -> held weights, costs, returns, equity
+│   ├── engine.py        # VECTORIZED engine: target weights -> held weights, costs, returns, equity
+│   ├── event_engine.py  # EVENT-DRIVEN engine (day loop, cash + units): needed for stops; matches engine.py exactly without them
+│   ├── risk.py          # RiskRules: stop_loss, take_profit, trailing_stop (fractions; None = off)
 │   ├── metrics.py       # KPIs: CAGR, vol, Sharpe, drawdown episodes, exposure; beta/alpha/IR vs benchmark
 │   ├── trades.py        # held weights -> round-trip trade list + trade stats (win rate, profit factor, ...)
 │   ├── constants.py     # shared conventions (TRADING_DAYS = 252)
@@ -67,7 +69,13 @@ Strategy families the design must support (the user's examples):
 
 - **Phase A, vectorized (pandas):** the whole backtest as column arithmetic, so the maths is fully visible.
 - **Phase B, event-driven (day-by-day loop):** for path-dependent rules such as stop-loss, take-profit, trailing stops and equity-based sizing.
-- Cross-check: both engines must produce the same equity curve on strategies that are not path-dependent.
+- Cross-check: both engines must produce the same equity curve on strategies that are not path-dependent. This is tested for a single ticker in both execution modes with costs.
+- `spec.engine = "auto"` uses the event engine when risk rules are on. `"vectorized"` or `"event"` force one.
+- Stop conventions:
+  - A gap through a stop fills at the open.
+  - If a day touches both stop and take-profit, assume the stop hit first.
+  - The trailing stop uses the highest close since entry.
+  - After a stop, the ticker is blocked until the strategy's target goes to 0 and then signals again.
 
 ## Roadmap
 
@@ -96,7 +104,14 @@ Strategy families the design must support (the user's examples):
   - There are 94 tests.
 - Golden cross on SPY 2005–2024: beta 0.48, alpha +3.4%/yr, but information ratio −0.19 (positive alpha, yet it trails buy-and-hold because it holds half the market exposure). 8 closed trades with a 75% win rate and a profit factor of 9.7. Its longest drawdown lasted 479 days, against 1,224 for buy-and-hold.
 - **Phase 3, app built:** `app.py` has three presets (golden cross, trend filter, RSI 30/70), a rule builder (up to 4 conditions per rule, combined with AND/OR, operands built from the indicator registry), and an editable JSON spec for anything the form can't express. Results show headline metrics, equity and drawdown charts (Plotly, strategy blue `#2a78d6` vs benchmark orange `#eb6834`), the performance table, comparison with the benchmark, trades and the worst drawdowns. Tested headlessly with `streamlit.testing.v1.AppTest`.
-- **Next:** deploy to Streamlit Community Cloud so it works from a phone. This needs a GitHub remote, and the user must confirm before one is created or pushed. After that comes Phase 4 (event-driven engine, stop-loss and take-profit).
+- **Deployed** on Streamlit Community Cloud from github.com/Edudiro/equity_backtester (branch `main`; pushing redeploys). The SSH key is `~/.ssh/id_ed25519`.
+- **Phase 4 done:**
+  - The event engine, with stop-loss, take-profit and trailing stops.
+  - `exit_reason` in trades.
+  - A risk section in the app.
+  - 115 tests.
+- Known event-engine simplification: with several tickers, unchanged positions drift and cash can go slightly negative. This gets fixed with proper rebalancing in Phase 6.
+- **Next:** Phase 5. Short selling (weights −1) and position sizing (fixed fraction, volatility targeting).
 
 ## Commands
 

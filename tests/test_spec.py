@@ -69,3 +69,20 @@ def test_invalid_strategy_rejected_when_parsing():
     bad = {**GOLDEN_CROSS, "entry": {**GOLDEN_CROSS["entry"], "op": "explodes"}}
     with pytest.raises(ValueError):
         StrategySpec.from_dict({"tickers": ["X"], "start": "2020-01-01", "end": "2021-01-01", "strategy": bad})
+
+
+def test_engine_selection():
+    from backtester.risk import RiskRules
+
+    assert not make().uses_event_engine
+    assert make(risk=RiskRules(stop_loss=0.05)).uses_event_engine
+    assert make(engine="event").uses_event_engine
+    with pytest.raises(ValueError, match="event engine"):
+        make(engine="vectorized", risk=RiskRules(stop_loss=0.05))
+
+
+def test_round_trip_with_risk():
+    from backtester.risk import RiskRules
+
+    spec = make(risk=RiskRules(stop_loss=0.05, trailing_stop=0.1), engine="event")
+    assert StrategySpec.from_dict(spec.to_dict()) == spec

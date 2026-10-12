@@ -80,3 +80,20 @@ def test_benchmark_can_be_another_ticker():
     bt = run_backtest(spec(benchmark="spy"), provider)
     assert list(bt.benchmark.held_weights.columns) == ["SPY"]
     assert list(bt.result.held_weights.columns) == ["X"]  # the strategy never trades SPY
+
+
+def test_forcing_either_engine_gives_the_same_result_without_stops(provider):
+    vec = run_backtest(spec(engine="vectorized", fee_bps=5), provider)
+    evt = run_backtest(spec(engine="event", fee_bps=5), provider)
+    pd.testing.assert_series_equal(vec.result.equity, evt.result.equity, check_exact=False, rtol=1e-12)
+
+
+def test_take_profit_runs_through_the_event_engine(provider):
+    # Prices rise 1 point a day from ~460 (~0.2%/day), so a 2% take-profit fires in ~10 days.
+    bt = run_backtest(spec(risk={"take_profit": 0.02}), provider)
+    first = bt.trades.iloc[0]
+    assert first["exit_reason"] == "take_profit"
+    # Fake bars have open == close, so the price gaps from 480 to 481 overnight,
+    # over the 480.42 level: filled at the open (481), as a gap should be.
+    assert first["exit_price"] == 481 > first["entry_price"] * 1.02
+    assert bt.result.trade_log is not None
