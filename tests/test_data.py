@@ -4,7 +4,8 @@ from datetime import date, datetime
 import pandas as pd
 import pytest
 
-from backtester.data import COLUMNS, CachedProvider, DataProvider, standardise
+from backtester.data import COLUMNS, FULL_HISTORY_START, CachedProvider, standardise
+from tests.fakes import FakeProvider, make_history
 
 
 def raw_yahoo_like_frame() -> pd.DataFrame:
@@ -21,25 +22,6 @@ def raw_yahoo_like_frame() -> pd.DataFrame:
         },
         index=idx,
     )
-
-
-def make_history(first: str, last: str) -> pd.DataFrame:
-    """Business-day bars with prices 100, 101, 102, ... (adj_close = close)."""
-    idx = pd.bdate_range(first, last, name="date")
-    px = 100.0 + pd.Series(range(len(idx)), index=idx, dtype=float)
-    return pd.DataFrame({c: px for c in ["open", "high", "low", "close", "adj_close"]} | {"volume": 1e6})
-
-
-class FakeProvider(DataProvider):
-    """Serves slices of an in-memory history and records every request."""
-
-    def __init__(self, history: pd.DataFrame):
-        self.history = history
-        self.requests: list[tuple[date, date]] = []
-
-    def get_prices(self, ticker, start, end):
-        self.requests.append((start, end))
-        return self.history.loc[start.isoformat() : end.isoformat()].copy()
 
 
 class Clock:
@@ -93,7 +75,7 @@ def test_first_request_downloads_full_history_once(setup):
     provider.get_prices("AAPL", date(2024, 2, 1), date(2024, 2, 29))
     provider.get_prices("AAPL", date(2024, 1, 10), date(2024, 3, 15))  # different range
 
-    assert inner.requests == [(CachedProvider.FULL_HISTORY_START, date(2024, 3, 29))]
+    assert inner.requests == [(FULL_HISTORY_START, date(2024, 3, 29))]
     assert path.exists()
 
 
@@ -144,7 +126,7 @@ def test_rescaled_history_triggers_full_redownload(setup):
     clock.value = date(2024, 4, 5)
     df = provider.get_prices("AAPL", date(2024, 1, 1), date(2024, 4, 5))
 
-    assert inner.requests[-1] == (CachedProvider.FULL_HISTORY_START, date(2024, 4, 5))
+    assert inner.requests[-1] == (FULL_HISTORY_START, date(2024, 4, 5))
     # Cache now holds the consistent, rescaled series.
     pd.testing.assert_frame_equal(df, new, check_freq=False)
 

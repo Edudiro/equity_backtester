@@ -57,6 +57,9 @@ COLUMNS = ["open", "high", "low", "close", "adj_close", "volume"]
 
 # <project root>/data_cache, built from this file's location (backtester/data.py)
 # so the cache is the same folder whichever directory the program is started from.
+# Earlier than any listing: asking for data from here means "the full history".
+FULL_HISTORY_START = date(1900, 1, 1)
+
 DEFAULT_CACHE_DIR = Path(__file__).resolve().parent.parent / "data_cache"
 
 
@@ -136,7 +139,6 @@ class CachedProvider(DataProvider):
     the trading session as an unfinished bar, which is simply overwritten.
     """
 
-    FULL_HISTORY_START = date(1900, 1, 1)  # earlier than any listing: "give me everything"
     OVERLAP_DAYS = 10  # calendar days re-downloaded to check for rescaling
 
     def __init__(
@@ -167,7 +169,7 @@ class CachedProvider(DataProvider):
         return df.loc[start.isoformat() : end.isoformat()]
 
     def _download_all(self, ticker: str) -> pd.DataFrame:
-        return self.inner.get_prices(ticker, self.FULL_HISTORY_START, self.today())
+        return self.inner.get_prices(ticker, FULL_HISTORY_START, self.today())
 
     def _update(self, ticker: str, cached: pd.DataFrame) -> pd.DataFrame:
         last = cached.index[-1]

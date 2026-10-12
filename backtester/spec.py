@@ -14,38 +14,58 @@ us three properties for free:
 
 1. Reproducibility: save the spec as JSON and you can re-run the backtest later.
 2. Testability: tests build specs directly, with no UI involved.
-3. Validation in one place: bad inputs (start after end, negative costs) are
-   rejected here, before any data is downloaded.
+3. Validation in one place: bad inputs (start after end, unknown indicator,
+   negative costs) are rejected here, before any data is downloaded.
 
 `frozen=True` makes the object immutable, so nothing downstream can quietly
 change a parameter halfway through a run.
 
+The spec has two parts: general settings (universe, dates, capital, costs,
+execution) shared by every strategy, and a `strategy` block whose `type`
+selects a builder from strategies.py. Example JSON:
+
+    {"tickers": ["AAPL"], "start": "2015-01-01", "end": "2024-12-31",
+     "fee_bps": 1, "slippage_bps": 2,
+     "strategy": {"type": "rule_based",
+                  "entry": {"left": {"indicator": "sma", "window": 50}, "op": "crosses_above",
+                            "right": {"indicator": "sma", "window": 200}},
+                  "exit":  {"left": {"indicator": "sma", "window": 50}, "op": "crosses_below",
+                            "right": {"indicator": "sma", "window": 200}}}}
+
 Costs are in basis points (1 bp = 0.01% = 0.0001), the usual convention on
-trading desks. They are applied per unit of turnover; see engine.py.
+trading desks. They are charged per unit of turnover; see engine.py.
 """
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from datetime import date
+
+from backtester.engine import EXECUTIONS
+from backtester.strategies import Strategy, parse_strategy
 
 
 @dataclass(frozen=True)
 class StrategySpec:
-    ticker: str
+    tickers: tuple[str, ...]
     start: date
     end: date  # inclusive: the last day we want data for
+    strategy: Strategy
     initial_capital: float = 10_000.0
     fee_bps: float = 0.0  # broker commission per unit traded, in bps
     slippage_bps: float = 0.0  # execution worse than the quoted price, in bps
+    execution: str = "next_open"  # when a decision taken at the close is traded; see engine.py
 
     def __post_init__(self) -> None:
-        # Normalise the ticker so "aapl" and "AAPL " hit the same cache file.
+        # Normalise tickers so "aapl" and "AAPL " hit the same cache file.
         # (object.__setattr__ is the standard way to set a field on a frozen dataclass.)
-        object.__setattr__(self, "ticker", self.ticker.strip().upper())
+        tickers = tuple(t.strip().upper() for t in self.tickers)
+        object.__setattr__(self, "tickers", tickers)
 
-        if not self.ticker:
-            raise ValueError("ticker must not be empty")
+        if not tickers or not all(tickers):
+            raise ValueError("tickers must be a non-empty list of non-empty symbols")
+        if len(set(tickers)) != len(tickers):
+            raise ValueError(f"duplicate tickers: {tickers}")
         if self.start >= self.end:
             raise ValueError(f"start ({self.start}) must be before end ({self.end})")
         if self.end > date.today():
@@ -54,6 +74,8 @@ class StrategySpec:
             raise ValueError("initial_capital must be positive")
         if self.fee_bps < 0 or self.slippage_bps < 0:
             raise ValueError("costs must be non-negative")
+        if self.execution not in EXECUTIONS:
+            raise ValueError(f"execution must be one of {EXECUTIONS}, got {self.execution!r}")
 
     @property
     def cost_per_unit_turnover(self) -> float:
@@ -63,14 +85,22 @@ class StrategySpec:
     # --- JSON round-trip: how the spec crosses the UI/engine boundary --------
 
     def to_dict(self) -> dict:
-        d = asdict(self)
-        d["start"] = self.start.isoformat()
-        d["end"] = self.end.isoformat()
-        return d
+        return {
+            "tickers": list(self.tickers),
+            "start": self.start.isoformat(),
+            "end": self.end.isoformat(),
+            "strategy": self.strategy.to_dict(),
+            "initial_capital": self.initial_capital,
+            "fee_bps": self.fee_bps,
+            "slippage_bps": self.slippage_bps,
+            "execution": self.execution,
+        }
 
     @classmethod
     def from_dict(cls, d: dict) -> StrategySpec:
         d = dict(d)
+        d["tickers"] = tuple(d["tickers"])
         d["start"] = date.fromisoformat(d["start"])
         d["end"] = date.fromisoformat(d["end"])
+        d["strategy"] = parse_strategy(d["strategy"])
         return cls(**d)
