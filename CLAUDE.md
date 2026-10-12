@@ -32,7 +32,7 @@ equity_backtester/
 │   ├── trades.py        # held weights -> round-trip trade list + trade stats (win rate, profit factor, ...)
 │   ├── constants.py     # shared conventions (TRADING_DAYS = 252)
 │   └── backtest.py      # run_backtest(spec) -> Backtest (strategy, benchmark, metrics, trades, drawdowns)
-├── app.py               # Streamlit frontend (thin): builds a StrategySpec, plots results (Phase 3)
+├── app.py               # Streamlit frontend (thin): presets + rule builder -> StrategySpec, plots results
 ├── tests/               # hand-computed toy series with known answers; tests/fakes.py has no-network fakes
 └── requirements.txt
 ```
@@ -95,7 +95,8 @@ Strategy families the design must support (the user's examples):
   - A buy-and-hold benchmark, plus beta, alpha, correlation, tracking error and information ratio.
   - There are 94 tests.
 - Golden cross on SPY 2005–2024: beta 0.48, alpha +3.4%/yr, but information ratio −0.19 (positive alpha, yet it trails buy-and-hold because it holds half the market exposure). 8 closed trades with a 75% win rate and a profit factor of 9.7. Its longest drawdown lasted 479 days, against 1,224 for buy-and-hold.
-- **Next:** Phase 3, the Streamlit app and deployment for phone use. Deployment needs a GitHub remote, so ask the user before creating or pushing one.
+- **Phase 3, app built:** `app.py` has three presets (golden cross, trend filter, RSI 30/70), a rule builder (up to 4 conditions per rule, combined with AND/OR, operands built from the indicator registry), and an editable JSON spec for anything the form can't express. Results show headline metrics, equity and drawdown charts (Plotly, strategy blue `#2a78d6` vs benchmark orange `#eb6834`), the performance table, comparison with the benchmark, trades and the worst drawdowns. Tested headlessly with `streamlit.testing.v1.AppTest`.
+- **Next:** deploy to Streamlit Community Cloud so it works from a phone. This needs a GitHub remote, and the user must confirm before one is created or pushed. After that comes Phase 4 (event-driven engine, stop-loss and take-profit).
 
 ## Commands
 
