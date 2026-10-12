@@ -55,6 +55,10 @@ import pandas as pd
 
 COLUMNS = ["open", "high", "low", "close", "adj_close", "volume"]
 
+# <project root>/data_cache, built from this file's location (backtester/data.py)
+# so the cache is the same folder whichever directory the program is started from.
+DEFAULT_CACHE_DIR = Path(__file__).resolve().parent.parent / "data_cache"
+
 
 class DataProvider(ABC):
     """Interface every data source implements."""
@@ -138,7 +142,7 @@ class CachedProvider(DataProvider):
     def __init__(
         self,
         inner: DataProvider,
-        cache_dir: str | Path = "data_cache",
+        cache_dir: str | Path = DEFAULT_CACHE_DIR,
         today: Callable[[], date] = date.today,  # injectable so tests can fake time passing
     ):
         self.inner = inner
@@ -190,6 +194,6 @@ class CachedProvider(DataProvider):
         df.to_csv(path)
 
 
-def default_provider(cache_dir: str | Path = "data_cache") -> DataProvider:
+def default_provider(cache_dir: str | Path = DEFAULT_CACHE_DIR) -> DataProvider:
     """The provider the app uses unless told otherwise."""
     return CachedProvider(YFinanceProvider(), cache_dir)
