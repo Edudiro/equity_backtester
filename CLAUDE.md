@@ -109,7 +109,7 @@ Strategy families the design must support (the user's examples):
   - The event engine, with stop-loss, take-profit and trailing stops.
   - `exit_reason` in trades.
   - A risk section in the app.
-  - 115 tests.
+  - 113 tests.
 - Known event-engine simplification: with several tickers, unchanged positions drift and cash can go slightly negative. This gets fixed with proper rebalancing in Phase 6.
 - **Next:** Phase 5. Short selling (weights −1) and position sizing (fixed fraction, volatility targeting).
 
